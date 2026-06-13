@@ -1,0 +1,14 @@
+# Windows and editor noise
+Thumbs.db
+Desktop.ini
+.DS_Store
+.idea/
+.vscode/
+
+# Local shortcuts and logs
+*.lnk
+*.log
+*.tmp
+
+# PowerShell local output
+*.ps1xml
