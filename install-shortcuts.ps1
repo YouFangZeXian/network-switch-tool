@@ -42,7 +42,8 @@ function New-NetworkShortcut {
     param(
         [Parameter(Mandatory = $true)][string]$Name,
         [Parameter(Mandatory = $true)][string]$ScriptPath,
-        [Parameter(Mandatory = $true)][string]$Hotkey,
+        [Parameter(Mandatory = $true)][string]$ShortcutDirectory,
+        [string]$Hotkey = "",
         [Parameter(Mandatory = $true)][string]$Description
     )
 
@@ -50,8 +51,9 @@ function New-NetworkShortcut {
         throw "脚本不存在：$ScriptPath"
     }
 
-    $desktop = [Environment]::GetFolderPath("DesktopDirectory")
-    $shortcutPath = Join-Path $desktop ($Name + ".lnk")
+    New-Item -ItemType Directory -Force -Path $ShortcutDirectory | Out-Null
+
+    $shortcutPath = Join-Path $ShortcutDirectory ($Name + ".lnk")
     $powershellPath = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
 
     $shell = New-Object -ComObject WScript.Shell
@@ -61,7 +63,9 @@ function New-NetworkShortcut {
     $shortcut.WorkingDirectory = Split-Path -Parent $ScriptPath
     $shortcut.WindowStyle = 7
     $shortcut.Description = $Description
-    $shortcut.Hotkey = $Hotkey
+    if (-not [string]::IsNullOrWhiteSpace($Hotkey)) {
+        $shortcut.Hotkey = $Hotkey
+    }
     $shortcut.IconLocation = "$powershellPath,0"
     $shortcut.Save()
 
@@ -76,7 +80,7 @@ function New-NetworkShortcut {
     return [pscustomobject]@{
         Name = $Name
         Path = $shortcutPath
-        Hotkey = $Hotkey
+        Hotkey = if ([string]::IsNullOrWhiteSpace($Hotkey)) { "无" } else { $Hotkey }
         RunAsAdministrator = $adminSet
     }
 }
@@ -88,26 +92,58 @@ if (-not (Test-IsAdministrator)) {
 
 try {
     $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+    $desktop = [Environment]::GetFolderPath("DesktopDirectory")
+    $desktopFolder = Join-Path $desktop "网络切换工具"
+    $startMenuFolder = Join-Path ([Environment]::GetFolderPath("StartMenu")) "Programs\网络切换工具"
 
-    $results = @(
-        New-NetworkShortcut `
-            -Name "切到校园网" `
-            -ScriptPath (Join-Path $projectRoot "switch-to-campus.ps1") `
-            -Hotkey "CTRL+ALT+1" `
-            -Description "切换到校园网 XiaoYuanWang，并提醒不要打开 VPN"
+    # Remove older desktop-root shortcuts so their hotkeys do not conflict with
+    # the Start Menu shortcuts that Windows listens to more reliably.
+    @("切到校园网", "切到路由器", "检查当前网络") | ForEach-Object {
+        $oldShortcut = Join-Path $desktop ($_.ToString() + ".lnk")
+        if (Test-Path -LiteralPath $oldShortcut -PathType Leaf) {
+            Remove-Item -LiteralPath $oldShortcut -Force
+        }
+    }
 
-        New-NetworkShortcut `
-            -Name "切到路由器" `
-            -ScriptPath (Join-Path $projectRoot "switch-to-router.ps1") `
-            -Hotkey "CTRL+ALT+2" `
-            -Description "切换到路由器 LuYouQi，确认后可以打开 VPN"
-
-        New-NetworkShortcut `
-            -Name "检查当前网络" `
-            -ScriptPath (Join-Path $projectRoot "check-network.ps1") `
-            -Hotkey "CTRL+ALT+3" `
-            -Description "检查 XiaoYuanWang 和 LuYouQi 的当前网络状态"
+    $shortcutDefinitions = @(
+        [pscustomobject]@{
+            Name = "切到校园网"
+            Script = "switch-to-campus.ps1"
+            Hotkey = "CTRL+ALT+1"
+            Description = "切换到校园网 XiaoYuanWang；如果检测到 VPN 或代理仍在运行，会禁止切换"
+        }
+        [pscustomobject]@{
+            Name = "切到路由器"
+            Script = "switch-to-router.ps1"
+            Hotkey = "CTRL+ALT+2"
+            Description = "切换到路由器 LuYouQi，确认后可以打开 VPN"
+        }
+        [pscustomobject]@{
+            Name = "检查当前网络"
+            Script = "check-network.ps1"
+            Hotkey = "CTRL+ALT+3"
+            Description = "检查 XiaoYuanWang 和 LuYouQi 的当前网络状态"
+        }
     )
+
+    $results = New-Object System.Collections.Generic.List[object]
+
+    foreach ($definition in $shortcutDefinitions) {
+        $scriptPath = Join-Path $projectRoot $definition.Script
+
+        $results.Add((New-NetworkShortcut `
+            -Name $definition.Name `
+            -ScriptPath $scriptPath `
+            -ShortcutDirectory $desktopFolder `
+            -Description $definition.Description))
+
+        $results.Add((New-NetworkShortcut `
+            -Name $definition.Name `
+            -ScriptPath $scriptPath `
+            -ShortcutDirectory $startMenuFolder `
+            -Hotkey $definition.Hotkey `
+            -Description $definition.Description))
+    }
 
     $summary = ($results | ForEach-Object {
         $adminText = if ($_.RunAsAdministrator) { "已尝试设置为管理员运行" } else { "未能自动设置管理员运行" }
@@ -121,15 +157,18 @@ try {
 
 快捷方式已设置为隐藏 PowerShell 终端窗口，只显示脚本弹窗提示。
 
+桌面文件夹里的快捷方式适合双击使用。
+全局快捷键设置在开始菜单“网络切换工具”文件夹里的快捷方式上；把桌面快捷方式移动到子文件夹后，Windows 可能不会继续监听它的快捷键。
+
 如果快捷键没有生效，请手动设置：
-右键桌面快捷方式 → 属性 → 快捷键 → 分别输入 Ctrl + Alt + 1 / 2 / 3 → 应用
+打开开始菜单文件夹中的快捷方式属性 → 快捷键 → 分别输入 Ctrl + Alt + 1 / 2 / 3 → 应用
 "@
 
     Write-Host $summary
     Write-Host $manualTip
 
     Show-Box -Title "快捷方式安装完成" -Icon Information -Message @"
-已在桌面创建 3 个快捷方式：
+已创建桌面文件夹快捷方式和开始菜单快捷键快捷方式：
 
 $summary
 $manualTip

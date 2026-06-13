@@ -6,6 +6,9 @@ $ErrorActionPreference = "Stop"
 $RouterName = "LuYouQi"
 $CampusName = "XiaoYuanWang"
 
+$VpnProcessKeywordPattern = "(?i)(vpn|openvpn|wireguard|tailscale|zerotier|clash|clash-verge|mihomo|v2ray|xray|sing-box|singbox|shadowsocks|sslocal|trojan|hysteria|tuic|naive|nekoray|netch|sstap|warp|anyconnect|globalprotect|forticlient|fortissl|openconnect|pulse|softether|protonvpn|nordvpn|expressvpn|surfshark|mullvad|windscribe|outline|lantern|cfw|flclash)"
+$VpnAdapterKeywordPattern = "(?i)(vpn|openvpn|wireguard|wintun|tap|tun|tailscale|zerotier|clash|mihomo|v2ray|xray|sing-box|singbox|shadowsocks|warp|anyconnect|globalprotect|forticlient|fortissl|openconnect|pulse|softether|protonvpn|nordvpn|expressvpn|surfshark|mullvad|windscribe|outline)"
+
 function Show-Box {
     param(
         [Parameter(Mandatory = $true)][string]$Message,
@@ -79,6 +82,45 @@ function Get-DefaultGatewaySummary {
     }
 }
 
+function Find-ActiveVpnSignals {
+    $signals = New-Object System.Collections.Generic.List[string]
+
+    $vpnProcesses = Get-Process -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.ProcessName -match $VpnProcessKeywordPattern -or
+            ($_.Path -and $_.Path -match $VpnProcessKeywordPattern)
+        } |
+        Sort-Object -Property ProcessName -Unique
+
+    foreach ($process in $vpnProcesses) {
+        $signals.Add("进程：{0} (PID: {1})" -f $process.ProcessName, $process.Id)
+    }
+
+    $vpnServices = Get-Service -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.Status -eq "Running" -and
+            ($_.Name -match $VpnProcessKeywordPattern -or $_.DisplayName -match $VpnProcessKeywordPattern)
+        } |
+        Sort-Object -Property Name -Unique
+
+    foreach ($service in $vpnServices) {
+        $signals.Add("服务：{0} / {1}" -f $service.Name, $service.DisplayName)
+    }
+
+    $vpnAdapters = Get-NetAdapter -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.Status -eq "Up" -and
+            ($_.Name -match $VpnAdapterKeywordPattern -or $_.InterfaceDescription -match $VpnAdapterKeywordPattern)
+        } |
+        Sort-Object -Property ifIndex -Unique
+
+    foreach ($adapter in $vpnAdapters) {
+        $signals.Add("网卡：{0} / {1} / {2}" -f $adapter.Name, $adapter.InterfaceDescription, $adapter.Status)
+    }
+
+    return $signals
+}
+
 if (-not (Test-IsAdministrator)) {
     Show-Box -Title "需要管理员权限" -Icon Warning -Message "请以管理员身份运行。"
     exit 1
@@ -87,6 +129,22 @@ if (-not (Test-IsAdministrator)) {
 try {
     Get-RequiredAdapter -Name $RouterName | Out-Null
     Get-RequiredAdapter -Name $CampusName | Out-Null
+
+    $vpnSignals = Find-ActiveVpnSignals
+    if ($vpnSignals.Count -gt 0) {
+        $signalText = ($vpnSignals | Select-Object -First 20) -join "`n"
+        $moreText = if ($vpnSignals.Count -gt 20) { "`n...另有 $($vpnSignals.Count - 20) 项疑似 VPN/代理信号未显示" } else { "" }
+
+        Show-Box -Title "检测到 VPN，已禁止切换校园网" -Icon Warning -Message @"
+检测到疑似 VPN / 代理 / 虚拟隧道仍在运行，已禁止切换到校园网。
+
+请先完全关闭 VPN、代理客户端或相关后台服务，再重新运行“切到校园网”。
+
+检测到的信号：
+$signalText$moreText
+"@
+        exit 3
+    }
 
     $router = Get-NetAdapter -Name $RouterName
     if ($router.Status -ne "Disabled") {

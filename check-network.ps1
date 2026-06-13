@@ -6,6 +6,9 @@ $ErrorActionPreference = "Stop"
 $RouterName = "LuYouQi"
 $CampusName = "XiaoYuanWang"
 
+$VpnProcessKeywordPattern = "(?i)(vpn|openvpn|wireguard|tailscale|zerotier|clash|clash-verge|mihomo|v2ray|xray|sing-box|singbox|shadowsocks|sslocal|trojan|hysteria|tuic|naive|nekoray|netch|sstap|warp|anyconnect|globalprotect|forticlient|fortissl|openconnect|pulse|softether|protonvpn|nordvpn|expressvpn|surfshark|mullvad|windscribe|outline|lantern|cfw|flclash)"
+$VpnAdapterKeywordPattern = "(?i)(vpn|openvpn|wireguard|wintun|tap|tun|tailscale|zerotier|clash|mihomo|v2ray|xray|sing-box|singbox|shadowsocks|warp|anyconnect|globalprotect|forticlient|fortissl|openconnect|pulse|softether|protonvpn|nordvpn|expressvpn|surfshark|mullvad|windscribe|outline)"
+
 function Show-Box {
     param(
         [Parameter(Mandatory = $true)][string]$Message,
@@ -56,6 +59,45 @@ function Get-DefaultGatewaySummary {
     return "{0} (InterfaceIndex: {1}, RouteMetric: {2})" -f $gateway, $route.InterfaceIndex, $route.RouteMetric
 }
 
+function Find-ActiveVpnSignals {
+    $signals = New-Object System.Collections.Generic.List[string]
+
+    $vpnProcesses = Get-Process -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.ProcessName -match $VpnProcessKeywordPattern -or
+            ($_.Path -and $_.Path -match $VpnProcessKeywordPattern)
+        } |
+        Sort-Object -Property ProcessName -Unique
+
+    foreach ($process in $vpnProcesses) {
+        $signals.Add("进程：{0} (PID: {1})" -f $process.ProcessName, $process.Id)
+    }
+
+    $vpnServices = Get-Service -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.Status -eq "Running" -and
+            ($_.Name -match $VpnProcessKeywordPattern -or $_.DisplayName -match $VpnProcessKeywordPattern)
+        } |
+        Sort-Object -Property Name -Unique
+
+    foreach ($service in $vpnServices) {
+        $signals.Add("服务：{0} / {1}" -f $service.Name, $service.DisplayName)
+    }
+
+    $vpnAdapters = Get-NetAdapter -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.Status -eq "Up" -and
+            ($_.Name -match $VpnAdapterKeywordPattern -or $_.InterfaceDescription -match $VpnAdapterKeywordPattern)
+        } |
+        Sort-Object -Property ifIndex -Unique
+
+    foreach ($adapter in $vpnAdapters) {
+        $signals.Add("网卡：{0} / {1} / {2}" -f $adapter.Name, $adapter.InterfaceDescription, $adapter.Status)
+    }
+
+    return $signals
+}
+
 if (-not (Test-IsAdministrator)) {
     Show-Box -Title "需要管理员权限" -Icon Warning -Message "请以管理员身份运行。"
     exit 1
@@ -65,6 +107,12 @@ try {
     $campus = Get-RequiredAdapter -Name $CampusName
     $router = Get-RequiredAdapter -Name $RouterName
     $gatewayText = Get-DefaultGatewaySummary
+    $vpnSignals = Find-ActiveVpnSignals
+    $vpnText = if ($vpnSignals.Count -gt 0) {
+        "`n疑似 VPN / 代理 / 虚拟隧道信号：`n" + (($vpnSignals | Select-Object -First 20) -join "`n")
+    } else {
+        "`n疑似 VPN / 代理 / 虚拟隧道信号：未检测到"
+    }
 
     $statusText = @"
 XiaoYuanWang 状态：$($campus.Status)
@@ -72,7 +120,19 @@ LuYouQi 状态：$($router.Status)
 
 当前默认网关：
 $gatewayText
+$vpnText
 "@
+
+    if ($campus.Status -eq "Up" -and $vpnSignals.Count -gt 0) {
+        Show-Box -Title "高风险：校园网和 VPN 同时存在" -Icon Warning -Message @"
+⚠️ 高风险：校园网网卡处于启用状态，同时检测到疑似 VPN / 代理 / 虚拟隧道。
+
+请立刻关闭 VPN/代理，并切换到路由器网络后再使用 VPN。
+
+$statusText
+"@
+        exit 3
+    }
 
     if ($campus.Status -eq "Up" -and $router.Status -eq "Up") {
         Show-Box -Title "危险：两张网卡同时启用" -Icon Warning -Message @"
