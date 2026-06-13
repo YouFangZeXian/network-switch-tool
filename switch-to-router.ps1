@@ -5,6 +5,8 @@ $ErrorActionPreference = "Stop"
 
 $RouterName = "LuYouQi"
 $CampusName = "XiaoYuanWang"
+$StateDirectory = Join-Path $PSScriptRoot ".state"
+$DisabledServicesStatePath = Join-Path $StateDirectory "disabled-vpn-services.json"
 
 function Show-Box {
     param(
@@ -79,6 +81,56 @@ function Get-DefaultGatewaySummary {
     }
 }
 
+function ConvertTo-ServiceStartupType {
+    param([string]$StartMode)
+
+    switch ($StartMode) {
+        "Auto" { return "Automatic" }
+        "Automatic" { return "Automatic" }
+        "Manual" { return "Manual" }
+        "Disabled" { return "Disabled" }
+        default { return "Manual" }
+    }
+}
+
+function Restore-CampusDisabledServices {
+    if (-not (Test-Path -LiteralPath $DisabledServicesStatePath -PathType Leaf)) {
+        return "没有需要恢复的 VPN/代理服务。"
+    }
+
+    $entries = @(Get-Content -LiteralPath $DisabledServicesStatePath -Encoding UTF8 -Raw | ConvertFrom-Json)
+    if ($entries.Count -eq 0) {
+        Remove-Item -LiteralPath $DisabledServicesStatePath -Force -ErrorAction SilentlyContinue
+        return "没有需要恢复的 VPN/代理服务。"
+    }
+
+    $messages = New-Object System.Collections.Generic.List[string]
+    foreach ($entry in $entries) {
+        $service = Get-Service -Name $entry.Name -ErrorAction SilentlyContinue
+        if ($null -eq $service) {
+            $messages.Add("未找到服务：$($entry.Name)")
+            continue
+        }
+
+        $startupType = ConvertTo-ServiceStartupType -StartMode $entry.StartMode
+        Set-Service -Name $entry.Name -StartupType $startupType -ErrorAction SilentlyContinue
+
+        if ($entry.WasRunning -eq $true) {
+            Start-Service -Name $entry.Name -ErrorAction SilentlyContinue
+        }
+
+        $messages.Add("已恢复服务：$($entry.Name) / 启动类型：$startupType")
+    }
+
+    Remove-Item -LiteralPath $DisabledServicesStatePath -Force -ErrorAction SilentlyContinue
+
+    if ($messages.Count -eq 0) {
+        return "没有需要恢复的 VPN/代理服务。"
+    }
+
+    return ($messages -join "`n")
+}
+
 if (-not (Test-IsAdministrator)) {
     Show-Box -Title "需要管理员权限" -Icon Warning -Message "请以管理员身份运行。"
     exit 1
@@ -121,6 +173,8 @@ $($gatewayInfo.Text)
         exit 2
     }
 
+    $restoreSummary = Restore-CampusDisabledServices
+
     Show-Box -Title "已切换路由器" -Icon Information -Message @"
 当前已切换到：路由器 / LuYouQi
 
@@ -129,6 +183,9 @@ $upAdapters
 
 当前默认网关：
 $($gatewayInfo.Text)
+
+VPN/代理服务恢复状态：
+$restoreSummary
 
 确认后可以打开 VPN。
 "@

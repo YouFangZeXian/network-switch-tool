@@ -12,3 +12,6 @@ Desktop.ini
 
 # PowerShell local output
 *.ps1xml
+
+# Runtime state created by the switch scripts
+.state/
