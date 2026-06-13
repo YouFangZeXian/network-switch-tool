@@ -53,10 +53,10 @@ function Get-DefaultGatewaySummary {
 
     $gateway = [string]$route.NextHop
     if ([string]::IsNullOrWhiteSpace($gateway) -or $gateway -eq "0.0.0.0") {
-        return "默认路由存在，但默认网关为空 (InterfaceIndex: {0}, RouteMetric: {1})" -f $route.InterfaceIndex, $route.RouteMetric
+        return "默认路由存在，但默认网关为空 (InterfaceIndex: $($route.InterfaceIndex), RouteMetric: $($route.RouteMetric))"
     }
 
-    return "{0} (InterfaceIndex: {1}, RouteMetric: {2})" -f $gateway, $route.InterfaceIndex, $route.RouteMetric
+    return "$gateway (InterfaceIndex: $($route.InterfaceIndex), RouteMetric: $($route.RouteMetric))"
 }
 
 function Find-ActiveVpnSignals {
@@ -70,7 +70,7 @@ function Find-ActiveVpnSignals {
         Sort-Object -Property ProcessName -Unique
 
     foreach ($process in $vpnProcesses) {
-        $signals.Add("进程：{0} (PID: {1})" -f $process.ProcessName, $process.Id)
+        $signals.Add("进程：$($process.ProcessName) (PID: $($process.Id))")
     }
 
     $vpnServices = Get-Service -ErrorAction SilentlyContinue |
@@ -81,7 +81,7 @@ function Find-ActiveVpnSignals {
         Sort-Object -Property Name -Unique
 
     foreach ($service in $vpnServices) {
-        $signals.Add("服务：{0} / {1}" -f $service.Name, $service.DisplayName)
+        $signals.Add("服务：$($service.Name) / $($service.DisplayName)")
     }
 
     $vpnAdapters = Get-NetAdapter -ErrorAction SilentlyContinue |
@@ -92,7 +92,7 @@ function Find-ActiveVpnSignals {
         Sort-Object -Property ifIndex -Unique
 
     foreach ($adapter in $vpnAdapters) {
-        $signals.Add("网卡：{0} / {1} / {2}" -f $adapter.Name, $adapter.InterfaceDescription, $adapter.Status)
+        $signals.Add("网卡：$($adapter.Name) / $($adapter.InterfaceDescription) / $($adapter.Status)")
     }
 
     return $signals

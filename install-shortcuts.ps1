@@ -93,11 +93,10 @@ if (-not (Test-IsAdministrator)) {
 try {
     $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
     $desktop = [Environment]::GetFolderPath("DesktopDirectory")
-    $desktopFolder = Join-Path $desktop "网络切换工具"
     $startMenuFolder = Join-Path ([Environment]::GetFolderPath("StartMenu")) "Programs\网络切换工具"
 
-    # Remove older desktop-root shortcuts so their hotkeys do not conflict with
-    # the Start Menu shortcuts that Windows listens to more reliably.
+    # Remove older desktop shortcuts so the desktop can stay clean and their
+    # hotkeys do not conflict with the Start Menu shortcuts.
     @("切到校园网", "切到路由器", "检查当前网络") | ForEach-Object {
         $oldShortcut = Join-Path $desktop ($_.ToString() + ".lnk")
         if (Test-Path -LiteralPath $oldShortcut -PathType Leaf) {
@@ -134,12 +133,6 @@ try {
         $results.Add((New-NetworkShortcut `
             -Name $definition.Name `
             -ScriptPath $scriptPath `
-            -ShortcutDirectory $desktopFolder `
-            -Description $definition.Description))
-
-        $results.Add((New-NetworkShortcut `
-            -Name $definition.Name `
-            -ScriptPath $scriptPath `
             -ShortcutDirectory $startMenuFolder `
             -Hotkey $definition.Hotkey `
             -Description $definition.Description))
@@ -157,7 +150,7 @@ try {
 
 快捷方式已设置为隐藏 PowerShell 终端窗口，只显示脚本弹窗提示。
 
-桌面文件夹里的快捷方式适合双击使用。
+本脚本不会在桌面创建快捷方式。
 全局快捷键设置在开始菜单“网络切换工具”文件夹里的快捷方式上；把桌面快捷方式移动到子文件夹后，Windows 可能不会继续监听它的快捷键。
 
 如果快捷键没有生效，请手动设置：
@@ -168,7 +161,7 @@ try {
     Write-Host $manualTip
 
     Show-Box -Title "快捷方式安装完成" -Icon Information -Message @"
-已创建桌面文件夹快捷方式和开始菜单快捷键快捷方式：
+已创建开始菜单快捷键快捷方式：
 
 $summary
 $manualTip

@@ -50,7 +50,7 @@ function Get-UpPhysicalAdapterSummary {
     }
 
     return ($adapters | ForEach-Object {
-        "- {0} | {1} | {2} | {3}" -f $_.Name, $_.InterfaceDescription, $_.Status, $_.LinkSpeed
+        "- $($_.Name) | $($_.InterfaceDescription) | $($_.Status) | $($_.LinkSpeed)"
     }) -join "`n"
 }
 
@@ -70,7 +70,7 @@ function Get-DefaultGatewaySummary {
     if ([string]::IsNullOrWhiteSpace($gateway) -or $gateway -eq "0.0.0.0") {
         $gatewayText = "默认路由存在，但默认网关为空"
     } else {
-        $gatewayText = "{0} (InterfaceIndex: {1}, RouteMetric: {2})" -f $gateway, $route.InterfaceIndex, $route.RouteMetric
+        $gatewayText = "$gateway (InterfaceIndex: $($route.InterfaceIndex), RouteMetric: $($route.RouteMetric))"
     }
 
     return @{
