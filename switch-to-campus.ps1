@@ -357,7 +357,7 @@ $signalText$moreText
 
     if ($null -eq $campus -or $campus.Status -ne "Up") {
         $campusStatus = if ($null -eq $campus) { "未找到" } else { $campus.Status }
-        Show-Box -Title "校园网未连接成功" -Icon Warning -Message @"
+        $openNetworkConnections = Show-ConfirmBox -Title "校园网未连接成功" -Message @"
 校园网未连接成功。
 
 脚本已在检测通过后尝试启用校园网网卡。
@@ -369,7 +369,14 @@ $upAdapters
 
 当前默认网关：
 $($gatewayInfo.Text)
+
+是否打开“控制面板\网络和 Internet\网络连接”查看校园网网卡状态？
 "@
+
+        if ($openNetworkConnections -eq [System.Windows.MessageBoxResult]::Yes) {
+            Start-Process -FilePath "control.exe" -ArgumentList "ncpa.cpl"
+        }
+
         exit 2
     }
 

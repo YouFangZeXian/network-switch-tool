@@ -149,7 +149,7 @@ powershell.exe -ExecutionPolicy Bypass -File ".\install-shortcuts.ps1"
 
 如果自动处理后仍检测到风险，脚本会继续禁止切换校园网。
 
-检测通过后，脚本会检查校园网网卡 `XiaoYuanWang` 的状态。如果它仍处于 `Disabled`，脚本会自动启用它并等待状态变为 `Up`；如果等待后仍未连接成功，会弹窗显示当前网卡状态和默认网关，方便排查网线、认证或校园网封禁状态。
+检测通过后，脚本会检查校园网网卡 `XiaoYuanWang` 的状态。如果它仍处于 `Disabled`，脚本会自动启用它并等待状态变为 `Up`；如果等待后仍未连接成功，会弹窗显示当前网卡状态和默认网关，并询问是否打开“控制面板\网络和 Internet\网络连接”，方便排查网线、认证或校园网封禁状态。
 
 切回路由器时，脚本会读取 `.state/disabled-vpn-services.json` 和 `.state/disabled-system-proxy.json`，恢复之前由脚本禁用的服务启动类型和系统代理状态；如果服务原本处于运行状态，也会尝试启动回来。
 
