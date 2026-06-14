@@ -100,6 +100,38 @@ function Get-DefaultGatewaySummary {
     }
 }
 
+function Enable-AdapterAndWait {
+    param(
+        [Parameter(Mandatory = $true)][string]$Name,
+        [int]$WaitSeconds = 12
+    )
+
+    $adapter = Get-NetAdapter -Name $Name -ErrorAction SilentlyContinue
+    if ($null -eq $adapter) {
+        return $null
+    }
+
+    if ($adapter.Status -eq "Disabled") {
+        Enable-NetAdapter -Name $Name -Confirm:$false
+        Start-Sleep -Seconds 2
+    }
+
+    for ($i = 0; $i -lt $WaitSeconds; $i++) {
+        $adapter = Get-NetAdapter -Name $Name -ErrorAction SilentlyContinue
+        if ($null -eq $adapter) {
+            return $null
+        }
+
+        if ($adapter.Status -eq "Up") {
+            return $adapter
+        }
+
+        Start-Sleep -Seconds 1
+    }
+
+    return (Get-NetAdapter -Name $Name -ErrorAction SilentlyContinue)
+}
+
 function Find-ActiveVpnSignals {
     $signals = New-Object System.Collections.Generic.List[object]
 
@@ -319,22 +351,18 @@ $signalText$moreText
 
     Start-Sleep -Seconds 2
 
-    $campus = Get-NetAdapter -Name $CampusName
-    if ($campus.Status -eq "Disabled") {
-        Enable-NetAdapter -Name $CampusName -Confirm:$false
-    }
-
-    Start-Sleep -Seconds 5
-
-    $campus = Get-NetAdapter -Name $CampusName
+    $campus = Enable-AdapterAndWait -Name $CampusName -WaitSeconds 12
     $upAdapters = Get-UpPhysicalAdapterSummary
     $gatewayInfo = Get-DefaultGatewaySummary
 
-    if ($campus.Status -ne "Up") {
+    if ($null -eq $campus -or $campus.Status -ne "Up") {
+        $campusStatus = if ($null -eq $campus) { "未找到" } else { $campus.Status }
         Show-Box -Title "校园网未连接成功" -Icon Warning -Message @"
 校园网未连接成功。
 
-XiaoYuanWang 当前状态：$($campus.Status)
+脚本已在检测通过后尝试启用校园网网卡。
+
+XiaoYuanWang 当前状态：$campusStatus
 
 当前启用网卡列表：
 $upAdapters

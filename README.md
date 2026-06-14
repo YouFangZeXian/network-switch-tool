@@ -46,7 +46,7 @@ $CampusName = "XiaoYuanWang"
 ## 文件说明
 
 - `switch-to-router.ps1`：禁用 `XiaoYuanWang`，启用 `LuYouQi`，检查默认网关和当前启用物理网卡，确认成功后提示可以打开 VPN。
-- `switch-to-campus.ps1`：切换前先检测疑似 VPN / 代理 / 虚拟隧道是否仍在运行，也会检查 Windows 系统代理是否开启；如果检测到风险，会询问是否自动退出相关进程、停用相关后台服务并关闭系统代理。复检无风险后才会禁用 `LuYouQi`、启用 `XiaoYuanWang`，并明确警告不要打开 VPN。
+- `switch-to-campus.ps1`：切换前先检测疑似 VPN / 代理 / 虚拟隧道是否仍在运行，也会检查 Windows 系统代理是否开启；如果检测到风险，会询问是否自动退出相关进程、停用相关后台服务并关闭系统代理。复检无风险后会禁用 `LuYouQi`，确认 `XiaoYuanWang` 已启用并等待它变为 `Up`，最后明确警告不要打开 VPN。
 - `check-network.ps1`：不修改任何网卡，只检查 `XiaoYuanWang`、`LuYouQi`、默认路由、默认网关和疑似 VPN/代理信号；如果校园网和 VPN/代理信号同时存在，会显示高风险警告。
 - `install-shortcuts.ps1`：在开始菜单创建 `网络切换工具` 文件夹用于全局快捷键，并尽量自动设置管理员运行；默认不在桌面创建快捷方式。
 
@@ -148,6 +148,8 @@ powershell.exe -ExecutionPolicy Bypass -File ".\install-shortcuts.ps1"
 5. 再次检测，确认无风险后才切入校园网。
 
 如果自动处理后仍检测到风险，脚本会继续禁止切换校园网。
+
+检测通过后，脚本会检查校园网网卡 `XiaoYuanWang` 的状态。如果它仍处于 `Disabled`，脚本会自动启用它并等待状态变为 `Up`；如果等待后仍未连接成功，会弹窗显示当前网卡状态和默认网关，方便排查网线、认证或校园网封禁状态。
 
 切回路由器时，脚本会读取 `.state/disabled-vpn-services.json` 和 `.state/disabled-system-proxy.json`，恢复之前由脚本禁用的服务启动类型和系统代理状态；如果服务原本处于运行状态，也会尝试启动回来。
 
