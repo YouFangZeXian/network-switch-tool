@@ -7,6 +7,8 @@ $RouterName = "LuYouQi"
 $CampusName = "XiaoYuanWang"
 $StateDirectory = Join-Path $PSScriptRoot ".state"
 $DisabledServicesStatePath = Join-Path $StateDirectory "disabled-vpn-services.json"
+$ProxyStatePath = Join-Path $StateDirectory "disabled-system-proxy.json"
+$InternetSettingsPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings"
 
 function Show-Box {
     param(
@@ -57,7 +59,7 @@ function Get-UpPhysicalAdapterSummary {
 }
 
 function Get-DefaultGatewaySummary {
-    $route = Get-NetRoute -DestinationPrefix "0.0.0.0/0" |
+    $route = Get-NetRoute -DestinationPrefix "0.0.0.0/0" -ErrorAction SilentlyContinue |
         Sort-Object RouteMetric |
         Select-Object -First 1
 
@@ -131,6 +133,32 @@ function Restore-CampusDisabledServices {
     return ($messages -join "`n")
 }
 
+function Restore-SystemProxy {
+    if (-not (Test-Path -LiteralPath $ProxyStatePath -PathType Leaf)) {
+        return "没有需要恢复的系统代理。"
+    }
+
+    $state = Get-Content -LiteralPath $ProxyStatePath -Encoding UTF8 -Raw | ConvertFrom-Json
+
+    Set-ItemProperty -Path $InternetSettingsPath -Name ProxyEnable -Value ([int]$state.ProxyEnable) -Type DWord -ErrorAction SilentlyContinue
+
+    if (-not [string]::IsNullOrWhiteSpace([string]$state.ProxyServer)) {
+        Set-ItemProperty -Path $InternetSettingsPath -Name ProxyServer -Value ([string]$state.ProxyServer) -Type String -ErrorAction SilentlyContinue
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace([string]$state.AutoConfigURL)) {
+        Set-ItemProperty -Path $InternetSettingsPath -Name AutoConfigURL -Value ([string]$state.AutoConfigURL) -Type String -ErrorAction SilentlyContinue
+    }
+
+    Remove-Item -LiteralPath $ProxyStatePath -Force -ErrorAction SilentlyContinue
+
+    if ([int]$state.ProxyEnable -eq 1) {
+        return "已恢复系统代理：$($state.ProxyServer)"
+    }
+
+    return "系统代理原本未开启。"
+}
+
 if (-not (Test-IsAdministrator)) {
     Show-Box -Title "需要管理员权限" -Icon Warning -Message "请以管理员身份运行。"
     exit 1
@@ -174,6 +202,7 @@ $($gatewayInfo.Text)
     }
 
     $restoreSummary = Restore-CampusDisabledServices
+    $proxyRestoreSummary = Restore-SystemProxy
 
     Show-Box -Title "已切换路由器" -Icon Information -Message @"
 当前已切换到：路由器 / LuYouQi
@@ -186,6 +215,9 @@ $($gatewayInfo.Text)
 
 VPN/代理服务恢复状态：
 $restoreSummary
+
+系统代理恢复状态：
+$proxyRestoreSummary
 
 确认后可以打开 VPN。
 "@

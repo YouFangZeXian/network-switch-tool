@@ -7,6 +7,8 @@ $RouterName = "LuYouQi"
 $CampusName = "XiaoYuanWang"
 $StateDirectory = Join-Path $PSScriptRoot ".state"
 $DisabledServicesStatePath = Join-Path $StateDirectory "disabled-vpn-services.json"
+$ProxyStatePath = Join-Path $StateDirectory "disabled-system-proxy.json"
+$InternetSettingsPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings"
 
 $VpnProcessKeywordPattern = "(?i)(vpn|openvpn|wireguard|tailscale|zerotier|clash|clash-verge|mihomo|v2ray|xray|sing-box|singbox|shadowsocks|sslocal|trojan|hysteria|tuic|naive|nekoray|netch|sstap|warp|anyconnect|globalprotect|forticlient|fortissl|openconnect|pulse|softether|protonvpn|nordvpn|expressvpn|surfshark|mullvad|windscribe|outline|lantern|cfw|flclash)"
 $VpnAdapterKeywordPattern = "(?i)(vpn|openvpn|wireguard|wintun|tap|tun|tailscale|zerotier|clash|mihomo|v2ray|xray|sing-box|singbox|shadowsocks|warp|anyconnect|globalprotect|forticlient|fortissl|openconnect|pulse|softether|protonvpn|nordvpn|expressvpn|surfshark|mullvad|windscribe|outline)"
@@ -74,7 +76,7 @@ function Get-UpPhysicalAdapterSummary {
 }
 
 function Get-DefaultGatewaySummary {
-    $route = Get-NetRoute -DestinationPrefix "0.0.0.0/0" |
+    $route = Get-NetRoute -DestinationPrefix "0.0.0.0/0" -ErrorAction SilentlyContinue |
         Sort-Object RouteMetric |
         Select-Object -First 1
 
@@ -148,6 +150,18 @@ function Find-ActiveVpnSignals {
         })
     }
 
+    $proxySettings = Get-ItemProperty -Path $InternetSettingsPath -ErrorAction SilentlyContinue
+    if ($null -ne $proxySettings -and [int]$proxySettings.ProxyEnable -eq 1) {
+        $signals.Add([pscustomobject]@{
+            Type = "SystemProxy"
+            Name = "WindowsSystemProxy"
+            ProxyEnable = [int]$proxySettings.ProxyEnable
+            ProxyServer = [string]$proxySettings.ProxyServer
+            AutoConfigURL = [string]$proxySettings.AutoConfigURL
+            Display = "系统代理：已开启 / $($proxySettings.ProxyServer)"
+        })
+    }
+
     return $signals
 }
 
@@ -183,12 +197,30 @@ function Save-DisabledServiceState {
     $merged | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $DisabledServicesStatePath -Encoding UTF8
 }
 
+function Save-SystemProxyState {
+    param([Parameter(Mandatory = $true)]$ProxySignal)
+
+    New-Item -ItemType Directory -Force -Path $StateDirectory | Out-Null
+
+    [pscustomobject]@{
+        ProxyEnable = $ProxySignal.ProxyEnable
+        ProxyServer = $ProxySignal.ProxyServer
+        AutoConfigURL = $ProxySignal.AutoConfigURL
+    } | ConvertTo-Json -Depth 3 | Set-Content -LiteralPath $ProxyStatePath -Encoding UTF8
+}
+
 function Disable-VpnSignalsForCampus {
     param([Parameter(Mandatory = $true)]$Signals)
 
     $disabledServices = New-Object System.Collections.Generic.List[object]
     $serviceSignals = @($Signals | Where-Object { $_.Type -eq "Service" })
     $processSignals = @($Signals | Where-Object { $_.Type -eq "Process" })
+    $proxySignals = @($Signals | Where-Object { $_.Type -eq "SystemProxy" })
+
+    if ($proxySignals.Count -gt 0) {
+        Save-SystemProxyState -ProxySignal ($proxySignals | Select-Object -First 1)
+        Set-ItemProperty -Path $InternetSettingsPath -Name ProxyEnable -Value 0 -Type DWord -ErrorAction SilentlyContinue
+    }
 
     foreach ($signal in $serviceSignals) {
         $service = Get-Service -Name $signal.Name -ErrorAction SilentlyContinue

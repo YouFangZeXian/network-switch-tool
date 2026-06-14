@@ -5,6 +5,7 @@ $ErrorActionPreference = "Stop"
 
 $RouterName = "LuYouQi"
 $CampusName = "XiaoYuanWang"
+$InternetSettingsPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings"
 
 $VpnProcessKeywordPattern = "(?i)(vpn|openvpn|wireguard|tailscale|zerotier|clash|clash-verge|mihomo|v2ray|xray|sing-box|singbox|shadowsocks|sslocal|trojan|hysteria|tuic|naive|nekoray|netch|sstap|warp|anyconnect|globalprotect|forticlient|fortissl|openconnect|pulse|softether|protonvpn|nordvpn|expressvpn|surfshark|mullvad|windscribe|outline|lantern|cfw|flclash)"
 $VpnAdapterKeywordPattern = "(?i)(vpn|openvpn|wireguard|wintun|tap|tun|tailscale|zerotier|clash|mihomo|v2ray|xray|sing-box|singbox|shadowsocks|warp|anyconnect|globalprotect|forticlient|fortissl|openconnect|pulse|softether|protonvpn|nordvpn|expressvpn|surfshark|mullvad|windscribe|outline)"
@@ -43,7 +44,7 @@ function Get-RequiredAdapter {
 }
 
 function Get-DefaultGatewaySummary {
-    $route = Get-NetRoute -DestinationPrefix "0.0.0.0/0" |
+    $route = Get-NetRoute -DestinationPrefix "0.0.0.0/0" -ErrorAction SilentlyContinue |
         Sort-Object RouteMetric |
         Select-Object -First 1
 
@@ -93,6 +94,11 @@ function Find-ActiveVpnSignals {
 
     foreach ($adapter in $vpnAdapters) {
         $signals.Add("网卡：$($adapter.Name) / $($adapter.InterfaceDescription) / $($adapter.Status)")
+    }
+
+    $proxySettings = Get-ItemProperty -Path $InternetSettingsPath -ErrorAction SilentlyContinue
+    if ($null -ne $proxySettings -and [int]$proxySettings.ProxyEnable -eq 1) {
+        $signals.Add("系统代理：已开启 / $($proxySettings.ProxyServer)")
     }
 
     return $signals
