@@ -344,13 +344,6 @@ $signalText$moreText
 "@
     }
 
-    $router = Get-NetAdapter -Name $RouterName
-    if ($router.Status -ne "Disabled") {
-        Disable-NetAdapter -Name $RouterName -Confirm:$false
-    }
-
-    Start-Sleep -Seconds 2
-
     $campus = Enable-AdapterAndWait -Name $CampusName -WaitSeconds 12
     $upAdapters = Get-UpPhysicalAdapterSummary
     $gatewayInfo = Get-DefaultGatewaySummary
@@ -379,6 +372,17 @@ $($gatewayInfo.Text)
 
         exit 2
     }
+
+    $router = Get-NetAdapter -Name $RouterName
+    if ($router.Status -ne "Disabled") {
+        Disable-NetAdapter -Name $RouterName -Confirm:$false
+    }
+
+    Start-Sleep -Seconds 2
+
+    $campus = Get-NetAdapter -Name $CampusName
+    $upAdapters = Get-UpPhysicalAdapterSummary
+    $gatewayInfo = Get-DefaultGatewaySummary
 
     Show-Box -Title "已切换校园网" -Icon Warning -Message @"
 当前已切换到：校园网 / XiaoYuanWang

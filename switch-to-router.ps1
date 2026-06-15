@@ -25,6 +25,20 @@ function Show-Box {
     ) | Out-Null
 }
 
+function Show-ConfirmBox {
+    param(
+        [Parameter(Mandatory = $true)][string]$Message,
+        [Parameter(Mandatory = $true)][string]$Title
+    )
+
+    return [System.Windows.MessageBox]::Show(
+        $Message,
+        $Title,
+        [System.Windows.MessageBoxButton]::YesNo,
+        [System.Windows.MessageBoxImage]::Warning
+    )
+}
+
 function Test-IsAdministrator {
     $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = New-Object System.Security.Principal.WindowsPrincipal($identity)
@@ -81,6 +95,38 @@ function Get-DefaultGatewaySummary {
         Gateway = $gateway
         Text = $gatewayText
     }
+}
+
+function Enable-AdapterAndWait {
+    param(
+        [Parameter(Mandatory = $true)][string]$Name,
+        [int]$WaitSeconds = 12
+    )
+
+    $adapter = Get-NetAdapter -Name $Name -ErrorAction SilentlyContinue
+    if ($null -eq $adapter) {
+        return $null
+    }
+
+    if ($adapter.Status -eq "Disabled") {
+        Enable-NetAdapter -Name $Name -Confirm:$false
+        Start-Sleep -Seconds 2
+    }
+
+    for ($i = 0; $i -lt $WaitSeconds; $i++) {
+        $adapter = Get-NetAdapter -Name $Name -ErrorAction SilentlyContinue
+        if ($null -eq $adapter) {
+            return $null
+        }
+
+        if ($adapter.Status -eq "Up") {
+            return $adapter
+        }
+
+        Start-Sleep -Seconds 1
+    }
+
+    return (Get-NetAdapter -Name $Name -ErrorAction SilentlyContinue)
 }
 
 function ConvertTo-ServiceStartupType {
@@ -168,6 +214,35 @@ try {
     Get-RequiredAdapter -Name $CampusName | Out-Null
     Get-RequiredAdapter -Name $RouterName | Out-Null
 
+    $router = Enable-AdapterAndWait -Name $RouterName -WaitSeconds 12
+    $upAdapters = Get-UpPhysicalAdapterSummary
+    $gatewayInfo = Get-DefaultGatewaySummary
+
+    if ($null -eq $router -or $router.Status -ne "Up") {
+        $routerStatus = if ($null -eq $router) { "未找到" } else { $router.Status }
+        $openNetworkConnections = Show-ConfirmBox -Title "路由器未连接成功" -Message @"
+路由器未连接成功，不要打开 VPN。
+
+脚本已尝试启用路由器网卡，并且没有禁用校园网网卡。
+
+LuYouQi 当前状态：$routerStatus
+
+当前启用网卡列表：
+$upAdapters
+
+当前默认网关：
+$($gatewayInfo.Text)
+
+是否打开“控制面板\网络和 Internet\网络连接”查看路由器网卡状态？
+"@
+
+        if ($openNetworkConnections -eq [System.Windows.MessageBoxResult]::Yes) {
+            Start-Process -FilePath "control.exe" -ArgumentList "ncpa.cpl"
+        }
+
+        exit 2
+    }
+
     $campus = Get-NetAdapter -Name $CampusName
     if ($campus.Status -ne "Disabled") {
         Disable-NetAdapter -Name $CampusName -Confirm:$false
@@ -176,19 +251,12 @@ try {
     Start-Sleep -Seconds 2
 
     $router = Get-NetAdapter -Name $RouterName
-    if ($router.Status -eq "Disabled") {
-        Enable-NetAdapter -Name $RouterName -Confirm:$false
-    }
-
-    Start-Sleep -Seconds 5
-
-    $router = Get-NetAdapter -Name $RouterName
     $upAdapters = Get-UpPhysicalAdapterSummary
     $gatewayInfo = Get-DefaultGatewaySummary
 
     if ($router.Status -ne "Up" -or [string]::IsNullOrWhiteSpace($gatewayInfo.Gateway) -or $gatewayInfo.Gateway -eq "0.0.0.0") {
-        Show-Box -Title "路由器未连接成功" -Icon Warning -Message @"
-路由器未连接成功，不要打开 VPN。
+        $openNetworkConnections = Show-ConfirmBox -Title "路由器默认网关异常" -Message @"
+路由器已启用，但默认网关未连接成功，不要打开 VPN。
 
 LuYouQi 当前状态：$($router.Status)
 
@@ -197,7 +265,14 @@ $upAdapters
 
 当前默认网关：
 $($gatewayInfo.Text)
+
+是否打开“控制面板\网络和 Internet\网络连接”查看路由器网卡状态？
 "@
+
+        if ($openNetworkConnections -eq [System.Windows.MessageBoxResult]::Yes) {
+            Start-Process -FilePath "control.exe" -ArgumentList "ncpa.cpl"
+        }
+
         exit 2
     }
 
